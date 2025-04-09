@@ -8,10 +8,21 @@ import {
   IconButton,
   Paper,
   Avatar,
+  Button,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import { deepPurple, lightGreen } from "@mui/material/colors";
 
+const formatIST = (dateString) =>
+    new Date(dateString).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  
 export default function Chat() {
   const [user, setUser] = useState(null);
   const [message, setMessage] = useState("");
@@ -60,6 +71,8 @@ export default function Chat() {
       console.error("Failed to fetch messages:", error.message);
     } else {
       setMessages(data);
+      markMessagesAsReceived();
+      markMessagesAsRead();
     }
   };
 
@@ -82,6 +95,26 @@ export default function Chat() {
     };
   };
 
+  const markMessagesAsReceived = async () => {
+    const { error } = await supabase
+      .from("messages")
+      .update({ received_time: new Date().toISOString() })
+      .eq("receiver_id", user.id)
+      .is("received_time", null);
+
+    if (error) console.error("Error marking as received:", error.message);
+  };
+
+  const markMessagesAsRead = async () => {
+    const { error } = await supabase
+      .from("messages")
+      .update({ read_time: new Date().toISOString() })
+      .eq("receiver_id", user.id)
+      .is("read_time", null);
+
+    if (error) console.error("Error marking as read:", error.message);
+  };
+
   const handleSend = async () => {
     if (!message.trim() || !selectedUser) return;
 
@@ -91,6 +124,7 @@ export default function Chat() {
         receiver_id: selectedUser.id,
         content: message,
         lamport_clock: Math.floor(Date.now() / 1000),
+        
       },
     ]);
 
@@ -98,6 +132,8 @@ export default function Chat() {
       alert("Failed to send message: " + error.message);
     } else {
       setMessage("");
+      markMessagesAsReceived();
+      markMessagesAsRead();
     }
   };
 
@@ -123,6 +159,17 @@ export default function Chat() {
             Logged in as: <strong>{user.email}</strong>
           </Typography>
         )}
+        <Button
+          variant="outlined"
+          color="error"
+          size="small"
+          onClick={async () => {
+            await supabase.auth.signOut();
+            window.location.href = "/";
+          }}
+        >
+          Logout
+        </Button>
 
         <Typography variant="subtitle2" sx={{ mb: 1 }}>
           🔽 Select user to chat:
@@ -183,10 +230,9 @@ export default function Chat() {
                   variant="caption"
                   sx={{ display: "block", textAlign: "right", mt: 0.5 }}
                 >
-                  {new Date(msg.sent_time).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  🕒 Sent: {formatIST(msg.sent_time)}<br />
+                  {msg.received_time && `✔ Delivered: ${formatIST(msg.received_time)}`}<br />
+                  {msg.read_time && `👁 Read: ${formatIST(msg.read_time)}`}
                 </Typography>
               </Paper>
             </Box>
