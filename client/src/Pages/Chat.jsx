@@ -9,20 +9,22 @@ import {
   Paper,
   Avatar,
   Button,
+  Divider,
 } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
+import LogoutIcon from "@mui/icons-material/Logout";
 import { deepPurple, lightGreen } from "@mui/material/colors";
 
 const formatIST = (dateString) =>
-    new Date(dateString).toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-  
+  new Date(dateString).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+
 export default function Chat() {
   const [user, setUser] = useState(null);
   const [message, setMessage] = useState("");
@@ -30,32 +32,29 @@ export default function Chat() {
   const [allUsers, setAllUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
 
+  /* ─────────────────────────── AUTH + INITIAL LOAD ────────────────────────── */
   useEffect(() => {
-    const getUser = async () => {
+    (async () => {
       const {
         data: { user },
         error,
       } = await supabase.auth.getUser();
-
-      if (error) {
-        console.error("Error fetching user:", error.message);
-        return;
-      }
+      if (error) return console.error(error.message);
 
       setUser(user);
       if (user) {
         loadUsers();
         subscribeToMessages(user.id);
       }
-    };
-
-    getUser();
+    })();
   }, []);
 
+  /* ─────────────────────────────── HELPERS ──────────────────────────────── */
   const loadUsers = async () => {
-    const { data, error } = await supabase.from("users").select("id, full_name, email");
-    if (error) console.error("Failed to load users:", error.message);
-    else setAllUsers(data.filter((u) => u.id !== user?.id));
+    const { data, error } = await supabase
+      .from("users")
+      .select("id, full_name, email");
+    if (!error) setAllUsers(data.filter((u) => u.id !== user?.id));
   };
 
   const loadMessages = async (receiverId) => {
@@ -67,54 +66,49 @@ export default function Chat() {
       )
       .order("sent_time", { ascending: true });
 
-    if (error) {
-      console.error("Failed to fetch messages:", error.message);
-    } else {
+    if (!error) {
       setMessages(data);
       markMessagesAsReceived();
       markMessagesAsRead();
     }
   };
 
-  const subscribeToMessages = (userId) => {
+  const subscribeToMessages = (uid) => {
     const channel = supabase
       .channel("messages-feed")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const newMsg = payload.new;
-        if (
-          (newMsg.sender_id === userId && newMsg.receiver_id === selectedUser?.id) ||
-          (newMsg.sender_id === selectedUser?.id && newMsg.receiver_id === userId)
-        ) {
-          setMessages((prev) => [...prev, newMsg]);
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const m = payload.new;
+          if (
+            (m.sender_id === uid && m.receiver_id === selectedUser?.id) ||
+            (m.sender_id === selectedUser?.id && m.receiver_id === uid)
+          ) {
+            setMessages((prev) => [...prev, m]);
+          }
         }
-      })
+      )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   };
 
   const markMessagesAsReceived = async () => {
-    const { error } = await supabase
+    await supabase
       .from("messages")
       .update({ received_time: new Date().toISOString() })
       .eq("receiver_id", user.id)
       .is("received_time", null);
-
-    if (error) console.error("Error marking as received:", error.message);
   };
-
   const markMessagesAsRead = async () => {
-    const { error } = await supabase
+    await supabase
       .from("messages")
       .update({ read_time: new Date().toISOString() })
       .eq("receiver_id", user.id)
       .is("read_time", null);
-
-    if (error) console.error("Error marking as read:", error.message);
   };
 
+  /* ───────────────────────────── SEND MESSAGE ───────────────────────────── */
   const handleSend = async () => {
     if (!message.trim() || !selectedUser) return;
 
@@ -124,58 +118,75 @@ export default function Chat() {
         receiver_id: selectedUser.id,
         content: message,
         lamport_clock: Math.floor(Date.now() / 1000),
-        
       },
     ]);
 
-    if (error) {
-      alert("Failed to send message: " + error.message);
-    } else {
+    if (!error) {
       setMessage("");
       markMessagesAsReceived();
       markMessagesAsRead();
     }
   };
 
+  /* ──────────────────────────────── UI ──────────────────────────────────── */
   return (
-    <Grid container sx={{ height: "100vh", background: "linear-gradient(to bottom right, #f5f7fa, #c3cfe2)" }}>
-      {/* Sidebar */}
+    <Grid
+      container
+      sx={{
+        height: "100vh",
+        background: "linear-gradient(135deg,#4f46e5 0%,#3b82f6 100%)",
+      }}
+    >
+      {/* ─────────── Sidebar ─────────── */}
       <Grid
         item
-        xs={3}
+        xs={12}
+        md={3}
         sx={{
-          backgroundColor: "#ffffff88",
-          backdropFilter: "blur(10px)",
-          padding: 2,
-          borderRight: "2px solid #e0e0e0",
+          backdropFilter: "blur(12px)",
+          backgroundColor: "rgba(255,255,255,0.15)",
+          p: 3,
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
         }}
       >
-        <Typography variant="h5" fontWeight="bold" color={deepPurple[600]} gutterBottom>
-          🚀 DisChat-Sync+
+        <Typography
+          variant="h5"
+          fontWeight="bold"
+          color="#fff"
+          sx={{ textShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
+        >
+          🚀 DisChat‑Sync+
         </Typography>
 
         {user && (
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 1, mb: 2 }}>
-            Logged in as: <strong>{user.email}</strong>
+          <Typography variant="body2" color="#e0e0e0">
+            Logged in as&nbsp;
+            <strong style={{ color: "#fff" }}>{user.email}</strong>
           </Typography>
         )}
+
         <Button
           variant="outlined"
+          startIcon={<LogoutIcon />}
           color="error"
-          size="small"
           onClick={async () => {
             await supabase.auth.signOut();
             window.location.href = "/";
           }}
+          sx={{ alignSelf: "flex-start" }}
         >
           Logout
         </Button>
 
-        <Typography variant="subtitle2" sx={{ mb: 1 }}>
-          🔽 Select user to chat:
+        <Divider sx={{ my: 1, borderColor: "rgba(255,255,255,0.3)" }} />
+
+        <Typography variant="subtitle2" color="#fff">
+          Select user to chat
         </Typography>
 
-        <Box mt={1}>
+        <Box sx={{ overflowY: "auto", pr: 1, flex: 1 }}>
           {allUsers.map((u) => (
             <Paper
               key={u.id}
@@ -186,82 +197,130 @@ export default function Chat() {
               sx={{
                 display: "flex",
                 alignItems: "center",
-                padding: 1,
+                gap: 1,
+                p: 1,
                 mb: 1,
                 cursor: "pointer",
-                backgroundColor: selectedUser?.id === u.id ? deepPurple[100] : "#fff",
-                transition: "0.3s",
+                borderRadius: 3,
+                backgroundColor:
+                  selectedUser?.id === u.id ? "rgba(255,255,255,0.3)" : "#ffffff",
+                transition: "0.25s",
                 "&:hover": {
-                  backgroundColor: deepPurple[50],
-                  transform: "scale(1.02)",
+                  transform: "translateY(-2px)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                 },
               }}
-              elevation={2}
+              elevation={0}
             >
-              <Avatar sx={{ mr: 1, bgcolor: deepPurple[400] }}>{u.full_name[0]}</Avatar>
-              <Typography>{u.full_name}</Typography>
+              <Avatar sx={{ bgcolor: deepPurple[500] }}>{u.full_name[0]}</Avatar>
+              <Typography fontWeight={500}>{u.full_name}</Typography>
             </Paper>
           ))}
         </Box>
       </Grid>
 
-      {/* Chat Area */}
-      <Grid item xs={9} sx={{ display: "flex", flexDirection: "column", padding: 2 }}>
-        {/* Chat Messages */}
-        <Box sx={{ flex: 1, overflowY: "auto", paddingRight: 1 }}>
-          {messages.map((msg) => (
-            <Box
-              key={msg.id}
-              display="flex"
-              justifyContent={msg.sender_id === user?.id ? "flex-end" : "flex-start"}
-              mb={1}
-            >
-              <Paper
+      {/* ─────────── Chat Area ─────────── */}
+      <Grid
+        item
+        xs={12}
+        md={9}
+        sx={{
+          p: { xs: 1, md: 4 },
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}
+      >
+        {/* Messages Scroll Box */}
+        <Box
+          sx={{
+            flex: 1,
+            overflowY: "auto",
+            pr: 1,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          {messages.map((msg) => {
+            const isMine = msg.sender_id === user?.id;
+            return (
+              <Box
+                key={msg.id}
                 sx={{
-                  padding: 1.5,
-                  backgroundColor: msg.sender_id === user?.id ? lightGreen[200] : "#ffffff",
-                  borderRadius: "15px",
-                  maxWidth: "60%",
-                  boxShadow: "0px 3px 6px rgba(0,0,0,0.1)",
+                  alignSelf: isMine ? "flex-end" : "flex-start",
+                  maxWidth: "70%",
                 }}
               >
-                <Typography>{msg.content}</Typography>
-                <Typography
-                  variant="caption"
-                  sx={{ display: "block", textAlign: "right", mt: 0.5 }}
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    borderRadius: 4,
+                    backgroundColor: isMine ? lightGreen[200] : "#fff",
+                    boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+                  }}
                 >
-                  🕒 Sent: {formatIST(msg.sent_time)}<br />
-                  {msg.received_time && `✔ Delivered: ${formatIST(msg.received_time)}`}<br />
-                  {msg.read_time && `👁 Read: ${formatIST(msg.read_time)}`}
-                </Typography>
-              </Paper>
-            </Box>
-          ))}
+                  <Typography>{msg.content}</Typography>
+
+                  <Typography
+                    variant="caption"
+                    sx={{ display: "block", mt: 1, opacity: 0.7 }}
+                  >
+                    🕒 Sent: {formatIST(msg.sent_time)}
+                    {msg.received_time && (
+                      <>
+                        <br />✔ Delivered: {formatIST(msg.received_time)}
+                      </>
+                    )}
+                    {msg.read_time && (
+                      <>
+                        <br />👁 Read: {formatIST(msg.read_time)}
+                      </>
+                    )}
+                  </Typography>
+                </Paper>
+              </Box>
+            );
+          })}
         </Box>
 
-        {/* Message Input */}
+        {/* Input Bar */}
         {selectedUser && (
-          <Box display="flex" alignItems="center" sx={{ mt: 1 }}>
+          <Paper
+            elevation={6}
+            sx={{
+              p: 1,
+              borderRadius: 5,
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              backdropFilter: "blur(8px)",
+              background:
+                "linear-gradient(135deg,rgba(255,255,255,0.6),rgba(255,255,255,0.4))",
+            }}
+          >
             <TextField
               fullWidth
               placeholder={`Message ${selectedUser.full_name}`}
-              variant="outlined"
-              size="small"
+              variant="standard"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              sx={{ backgroundColor: "#fff", borderRadius: 2, boxShadow: "0px 2px 4px rgba(0,0,0,0.1)" }}
+              InputProps={{ disableUnderline: true }}
             />
             <IconButton
               onClick={handleSend}
-              color="primary"
-              sx={{ ml: 1, backgroundColor: deepPurple[400], color: "#fff", "&:hover": { backgroundColor: deepPurple[600] } }}
+              sx={{
+                bgcolor: "#3b82f6",
+                color: "#fff",
+                "&:hover": { bgcolor: "#2563eb" },
+              }}
             >
               <SendIcon />
             </IconButton>
-          </Box>
+          </Paper>
         )}
       </Grid>
     </Grid>
   );
 }
-
